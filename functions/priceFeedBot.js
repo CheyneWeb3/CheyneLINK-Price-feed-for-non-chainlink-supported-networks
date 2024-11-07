@@ -87,10 +87,13 @@ async function fetchCurrentPrice() {
 
 async function updatePriceOnChain(newPrice) {
   try {
-    const gasPrices = await fetchGasPrices();
+    const gasPrice = await provider.getGasPrice(); // Fetch gas price for legacy transactions
+
+    // Send the transaction with type 0 for legacy compatibility
     const tx = await contract.updatePrice(newPrice, {
-      ...gasPrices,
       gasLimit: DEFAULT_GAS_LIMIT,
+      gasPrice: gasPrice, // Set gas price for legacy transaction
+      type: 0, // Set legacy transaction type
     });
     console.log("\x1b[32mTransaction sent:\x1b[0m", tx.hash);
     await tx.wait();
@@ -105,6 +108,7 @@ async function updatePriceOnChain(newPrice) {
     }
   }
 }
+
 
 async function displayBotBalance() {
   try {
