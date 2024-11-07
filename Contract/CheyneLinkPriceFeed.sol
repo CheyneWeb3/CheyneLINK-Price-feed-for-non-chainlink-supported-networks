@@ -3,9 +3,6 @@ How to and Guide here (Keep the name scabs)
 
 Introduction
 
-Contract for the Price Feed Bot with Firebase Functions
-This project is a serverless bot deployed on Firebase Functions to fetch the current price of a token from the GeckoTerminal API and update it on-chain using a secure Ethereum smart contract. The bot leverages Firebase’s Secret Manager to securely handle sensitive information, such as the bot’s private key.
-
 https://github.com/ArielRin/CheyneLINK-Price-feed-for-non-chainlink-supported-networks
 
 
@@ -32,14 +29,17 @@ https://github.com/ArielRin/CheyneLINK-Price-feed-for-non-chainlink-supported-ne
 
 */
 
+
+
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
 contract CheyneLinkPriceFeed {
     uint256 private currentPrice;
-    address private owner;
+    address public owner;
 
     event PriceUpdated(uint256 newPrice);
+    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
 
     modifier onlyOwner() {
         require(msg.sender == owner, "Not authorized");
@@ -48,9 +48,17 @@ contract CheyneLinkPriceFeed {
 
     constructor() {
         owner = msg.sender;
+        emit OwnershipTransferred(address(0), owner);
     }
 
-    // Update price directly by the owner
+    // Function to transfer ownership
+    function transferOwnership(address newOwner) external onlyOwner {
+        require(newOwner != address(0), "New owner is zero address");
+        emit OwnershipTransferred(owner, newOwner);
+        owner = newOwner;
+    }
+
+    // Function to update the price, restricted to the owner
     function updatePrice(uint256 newPrice) external onlyOwner {
         currentPrice = newPrice;
         emit PriceUpdated(newPrice);
@@ -60,7 +68,11 @@ contract CheyneLinkPriceFeed {
         return currentPrice;
     }
 
-    // Add this function to accept ETH deposits if needed
+
+    function latestAnswer() external view returns (uint256) {
+        return currentPrice;
+    }
+
     receive() external payable {}
 
     function withdrawEth() external onlyOwner {
