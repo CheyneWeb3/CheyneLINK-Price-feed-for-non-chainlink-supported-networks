@@ -1,5 +1,5 @@
 
-# CheyneLINK Price Feed 
+# CheyneLINK Price Feed
 
 CheyneLINK is a Node.js bot that monitors the price of a specified token on the GeckoTerminal API and updates it on-chain using an Ethereum smart contract. This bot is designed to work seamlessly on Linode for constant uptime and ensures secure interaction with your blockchain contract.
 
@@ -10,6 +10,8 @@ CheyneLINK is a Node.js bot that monitors the price of a specified token on the 
 - **Environment Variables**: Manage configuration for the bot securely using `.env`.
 - **Deployment**: Hosted on Linode for reliable uptime, managed by PM2 to restart automatically on server reboot.
 
+
+![CheyneLINK Bot Overview](./Guides/cheynelink.png)
 ---
 
 ## Prerequisites
