@@ -7,11 +7,11 @@ const RPC_URL = process.env.RPC_URL;
 const BOT_PRIVATE_KEY = process.env.BOT_PRIVATE_KEY;
 const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS;
 const BOT_WALLET_ADDRESS = process.env.BOT_WALLET_ADDRESS;
-const TOKEN_NAME = process.env.TOKEN_NAME || "Token";
-const TOKEN_SYMBOL = process.env.TOKEN_SYMBOL || "SYM";
+const TOKEN_NAME = process.env.TOKEN_NAME || "Ethereum";
+const TOKEN_SYMBOL = process.env.TOKEN_SYMBOL || "ETH";
 const TOKEN_DECIMALS = parseInt(process.env.TOKEN_DECIMALS, 10) || 18;
 
-const PRICE_CHANGE_THRESHOLD = ethers.BigNumber.from(process.env.PRICE_CHANGE_THRESHOLD || "100"); // 1% change threshold
+const PRICE_CHANGE_THRESHOLD = ethers.BigNumber.from(process.env.PRICE_CHANGE_THRESHOLD || "100");
 const SCALE_FACTOR = ethers.BigNumber.from(process.env.SCALE_FACTOR || "10000");
 const DEFAULT_GAS_LIMIT = ethers.utils.hexlify(parseInt(process.env.DEFAULT_GAS_LIMIT) || 50000);
 const FALLBACK_MAX_FEE_PER_GAS = ethers.utils.parseUnits(process.env.MAX_FEE_PER_GAS_GWEI || "10", "gwei");
@@ -26,6 +26,9 @@ const abi = [
   "function owner() view returns (address)"
 ];
 const contract = new ethers.Contract(CONTRACT_ADDRESS, abi, wallet);
+
+// Initialize previous price variable
+let previousPrice = ethers.BigNumber.from("0");
 
 function showHeader() {
   console.clear();
@@ -55,26 +58,6 @@ async function ensureOwnership() {
   }
 }
 
-async function updatePriceOnChain(newPrice) {
-  try {
-    const gasPrice = await provider.getGasPrice();
-    const tx = await contract.updatePrice(newPrice, {
-      gasLimit: DEFAULT_GAS_LIMIT,
-      gasPrice: gasPrice,
-      type: 0, // Set transaction type to legacy for compatibility
-    });
-    console.log("\x1b[32mTransaction sent:\x1b[0m", tx.hash);
-    await tx.wait();
-    console.log("\x1b[32mPrice updated on-chain:\x1b[0m", newPrice.toString());
-  } catch (error) {
-    if (error.code === 'INSUFFICIENT_FUNDS') {
-      console.error("\x1b[31mError:\x1b[0m Insufficient funds for gas. Please add funds to the wallet.");
-    } else {
-      console.error("\x1b[31mError updating price on-chain:\x1b[0m", error);
-    }
-  }
-}
-
 async function displayBotBalance() {
   try {
     const balance = await provider.getBalance(BOT_WALLET_ADDRESS);
@@ -88,43 +71,70 @@ async function displayBotBalance() {
   }
 }
 
-async function connectToWebSocket() {
-  const ws = new WebSocket("wss://stream.binance.com:9443/ws/ethusdt@trade");
+async function updatePriceOnChain(newPrice) {
+  try {
+    const gasPrice = await provider.getGasPrice();
 
-  ws.on("open", () => {
-    console.log("Connected to Binance WebSocket for real-time ETH price.");
+    // Send the transaction with type 0 for legacy compatibility
+    const tx = await contract.updatePrice(newPrice, {
+      gasLimit: DEFAULT_GAS_LIMIT,
+      gasPrice: gasPrice,
+      type: 0,
+    });
+    console.log("\x1b[32mTransaction sent:\x1b[0m", tx.hash);
+    await tx.wait();
+    console.log("\x1b[32mPrice updated on-chain:\x1b[0m", newPrice.toString());
+  } catch (error) {
+    console.error("\x1b[31mError updating price on-chain:\x1b[0m", error);
+  }
+}
+
+async function handlePriceUpdate(newPrice) {
+  try {
+    const currentPriceOnChain = await contract.getPrice();
+    const priceDifference = newPrice.sub(currentPriceOnChain).abs();
+    const thresholdValue = currentPriceOnChain.mul(PRICE_CHANGE_THRESHOLD).div(SCALE_FACTOR);
+
+    if (priceDifference.gt(thresholdValue)) {
+      console.log(`\x1b[33mPrice change significant\x1b[0m (${priceDifference.toString()} > ${thresholdValue.toString()}), updating...`);
+      await updatePriceOnChain(newPrice);
+    } else {
+      console.log("\x1b[33mPrice change not significant, no update needed.\x1b[0m");
+    }
+  } catch (error) {
+    console.error("\x1b[31mError in price update handling:\x1b[0m", error);
+  }
+}
+
+function connectToWebSocket() {
+  const ws = new WebSocket('wss://stream.binance.com:9443/ws/ethusdt@trade');
+
+  ws.on('open', () => {
+    console.log("Connected to Binance WebSocket for ETH/USDT price updates.");
   });
 
-  ws.on("message", async (data) => {
-    const jsonData = JSON.parse(data);
-    const price = parseFloat(jsonData.p);
-    console.log(`\x1b[36mReal-time price update for ${TOKEN_NAME} (${TOKEN_SYMBOL}): $${price}\x1b[0m`);
+  ws.on('message', async (data) => {
+    const trade = JSON.parse(data);
+    const price = parseFloat(trade.p); // Price in USD
 
-    const newPrice = ethers.utils.parseUnits(price.toString(), TOKEN_DECIMALS);
+    // Scale the price to 18 decimal places
+    const scaledPrice = ethers.utils.parseUnits(price.toString(), TOKEN_DECIMALS);
+    console.log(`\x1b[36mFetched real-time price for ${TOKEN_NAME} (${TOKEN_SYMBOL}):\x1b[0m $${price} USD`);
 
-    try {
-      const currentPriceOnChain = await contract.getPrice();
-      const priceDifference = newPrice.sub(currentPriceOnChain).abs();
-      const thresholdValue = currentPriceOnChain.mul(PRICE_CHANGE_THRESHOLD).div(SCALE_FACTOR);
-
-      if (priceDifference.gt(thresholdValue)) {
-        console.log(`\x1b[33mPrice change significant\x1b[0m (${priceDifference.toString()} > ${thresholdValue.toString()}), updating...`);
-        await updatePriceOnChain(newPrice);
-      } else {
-        console.log("\x1b[33mPrice change not significant, no update needed.\x1b[0m");
-      }
-    } catch (error) {
-      console.error("Error during price comparison or update:", error);
+    // Update the price only if it has changed significantly
+    if (!scaledPrice.eq(previousPrice)) {
+      previousPrice = scaledPrice;
+      await handlePriceUpdate(scaledPrice);
     }
   });
 
-  ws.on("error", (error) => {
-    console.error("WebSocket error:", error);
+  ws.on('close', () => {
+    console.log("Disconnected from Binance WebSocket, attempting to reconnect...");
+    setTimeout(connectToWebSocket, 1000); // Reconnect after a delay
   });
 
-  ws.on("close", () => {
-    console.log("WebSocket connection closed. Reconnecting...");
-    setTimeout(connectToWebSocket, 1000); // Attempt to reconnect after a short delay
+  ws.on('error', (error) => {
+    console.error("WebSocket error:", error);
   });
 }
 
@@ -132,7 +142,7 @@ async function main() {
   showHeader();
   await ensureOwnership();
   await displayBotBalance();
-  connectToWebSocket(); // Start WebSocket connection for live price feed
+  connectToWebSocket(); // Start WebSocket connection for price updates
 }
 
 // Run the script initially
