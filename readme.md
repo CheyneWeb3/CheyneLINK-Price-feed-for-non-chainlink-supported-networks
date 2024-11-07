@@ -22,6 +22,9 @@ This project is a serverless bot deployed on Firebase Functions to fetch the cur
 
 ## Project Setup
 
+**Contract link ** Deploy Contract (not in this scope)
+https://basescan.org/address/0xe96FB24d029d94321336ddea22D63CE7cd4A491c#code
+
 1. **Clone or initialize a project directory** for the bot, and install Firebase functions:
 
     ```bash
