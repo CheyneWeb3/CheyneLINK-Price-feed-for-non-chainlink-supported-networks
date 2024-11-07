@@ -91,6 +91,9 @@ Start the bot manually to confirm it’s working as expected:
 node your-bot-script.js
 ```
 
+
+![CheyneLINK Feed Running](./Guides/bot.png)
+
 ### 6. Set Up PM2 for Process Management
 
 To ensure the bot runs continuously, even after a server reboot, use PM2:
