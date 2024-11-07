@@ -6,14 +6,34 @@ Introduction
 Contract for the Price Feed Bot with Firebase Functions
 This project is a serverless bot deployed on Firebase Functions to fetch the current price of a token from the GeckoTerminal API and update it on-chain using a secure Ethereum smart contract. The bot leverages Firebase’s Secret Manager to securely handle sensitive information, such as the bot’s private key.
 
-deployed firstly at https://basescan.org/address/0xe96FB24d029d94321336ddea22D63CE7cd4A491c#code
-
 https://github.com/ArielRin/CheyneLINK-Price-feed-for-non-chainlink-supported-networks
+
+
+
+                                                                                                       ....       .
+              .:==:.                                                                                   .   ....
+           .-=+++++++-:.                                                                               .       ...
+       .:=++++++++++++++=:.                                                                           ....
+    .-=+++++++++++++++++++++-:                                                                        .   ......
+  -+++++++++++-:. .-=++++++++++-                                                                     ..         ...
+  =+++++++=:.        .:=++++++++                                                      .--  -=:       ....:-:
+  =+++++=.               -++++++  .-=++=-:  -=.                                       .++  --:      ..   :+-.......
+  =+++++-                :++++++ .++:..:==. =+::::.   .:::. .::   :: .:.:::.   .:::.  .++  :-. .--:==-.  :+- .---.
+  =+++++-                :++++++ -+-        =+=:-++..=+-:=+:.++. :+- -++-:++: -+-:=+: .++  =+: .++-:-++. :+-:++-.
+  =+++++-                :++++++ -+=    ::. =+:  ++.:++--=+- :+=.++. -+-  =+-.++---+= .++  =+: .+= . =+: :++++-....
+  =+++++-                :++++++ .=+=::-++. =+:  ++..++:.-=.  -+++.  -+-  -+- =+-.-=: .++  =+: .+= . =+: :+=.-+=. .
+  =++++++=:.          .:-+++++++   .:---:   :-.  :-. .:---.    ++:   :-.  :-.  :---:  .--  :-. .--.. --..:-:..:--..
+  =+++++++++=-.    .:=++++++++++                             =++-                                 ....            .
+  .:-+++++++++++--+++++++++++-:.                                                                  .         .......
+      .:=++++++++++++++++=-.                                                                     .   .......     .
+          :-++++++++++-:.                                                                        ....        ......
+             .:=++=-.                                                                           .       .....     .
+                 .                                                                              .   ....      ....
+
 */
 
-
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity 0.8.28;
 
 contract CheyneLinkPriceFeed {
     uint256 private currentPrice;
@@ -30,6 +50,7 @@ contract CheyneLinkPriceFeed {
         owner = msg.sender;
     }
 
+    // Update price directly by the owner
     function updatePrice(uint256 newPrice) external onlyOwner {
         currentPrice = newPrice;
         emit PriceUpdated(newPrice);
@@ -39,7 +60,10 @@ contract CheyneLinkPriceFeed {
         return currentPrice;
     }
 
-    function transferOwnership(address newOwner) external onlyOwner {
-        owner = newOwner;
+    // Add this function to accept ETH deposits if needed
+    receive() external payable {}
+
+    function withdrawEth() external onlyOwner {
+        payable(owner).transfer(address(this).balance);
     }
 }
