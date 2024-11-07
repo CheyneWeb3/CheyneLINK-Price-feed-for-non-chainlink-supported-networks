@@ -19,11 +19,11 @@ This project is a serverless bot deployed on Firebase Functions to fetch the cur
 - **Node.js and npm**: [Install Node.js](https://nodejs.org/)
 - **Firebase CLI**: Install with `npm install -g firebase-tools`
 - **Ethereum Node Provider** (e.g., Infura): To connect to Ethereum’s network
+- **Contract link** Deploy Contract [contract link](https://basescan.org/address/0xe96FB24d029d94321336ddea22D63CE7cd4A491c#code) (not in this scope)
+
 
 ## Project Setup
 
-**Contract link ** Deploy Contract (not in this scope)
-https://basescan.org/address/0xe96FB24d029d94321336ddea22D63CE7cd4A491c#code
 
 1. **Clone or initialize a project directory** for the bot, and install Firebase functions:
 
