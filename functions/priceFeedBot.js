@@ -85,6 +85,7 @@ async function fetchCurrentPrice() {
   }
 }
 
+
 async function updatePriceOnChain(newPrice) {
   try {
     const gasPrice = await provider.getGasPrice(); // Fetch gas price for legacy transactions
