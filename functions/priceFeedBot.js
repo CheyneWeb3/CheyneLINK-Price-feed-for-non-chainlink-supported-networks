@@ -13,7 +13,8 @@ const TOKEN_DECIMALS = parseInt(process.env.TOKEN_DECIMALS, 10);
 const PRICE_CHANGE_THRESHOLD = parseFloat(process.env.PRICE_CHANGE_THRESHOLD) / 100000;
 const DEFAULT_GAS_LIMIT = ethers.utils.hexlify(parseInt(process.env.DEFAULT_GAS_LIMIT, 10));
 const INITIAL_GAS_PRICE_GWEI = ethers.utils.parseUnits(process.env.MAX_FEE_PER_GAS_GWEI, "gwei");
-const GAS_PRICE_INCREMENT_GWEI = ethers.utils.parseUnits("1", "gwei"); // Increment by 1 gwei if underpriced
+const GAS_PRICE_INCREMENT_GWEI = ethers.utils.parseUnits("1", "gwei");
+const WEBSOCKET_URL = process.env.WEBSOCKET_URL; // WebSocket URL from .env
 
 const provider = new ethers.providers.JsonRpcProvider(RPC_URL);
 const wallet = new ethers.Wallet(BOT_PRIVATE_KEY, provider);
@@ -89,10 +90,10 @@ async function updatePriceOnChain(newPrice, retryGasPrice = INITIAL_GAS_PRICE_GW
 }
 
 async function connectToWebSocket() {
-  const ws = new WebSocket("wss://stream.binance.com:9443/ws/ethusdt@trade");
+  const ws = new WebSocket(WEBSOCKET_URL); // Use the WebSocket URL from .env
 
   ws.on("open", () => {
-    console.log("Connected to Binance WebSocket for real-time ETH price.");
+    console.log("Connected to WebSocket for real-time ETH price.");
   });
 
   ws.on("message", async (data) => {
