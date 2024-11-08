@@ -7,15 +7,13 @@ const RPC_URL = process.env.RPC_URL;
 const BOT_PRIVATE_KEY = process.env.BOT_PRIVATE_KEY;
 const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS;
 const BOT_WALLET_ADDRESS = process.env.BOT_WALLET_ADDRESS;
-const TOKEN_NAME = process.env.TOKEN_NAME || "Token";
-const TOKEN_SYMBOL = process.env.TOKEN_SYMBOL || "SYM";
-const TOKEN_DECIMALS = parseInt(process.env.TOKEN_DECIMALS, 10) || 18;
-
-const PRICE_CHANGE_THRESHOLD = ethers.BigNumber.from(process.env.PRICE_CHANGE_THRESHOLD || "100"); // 1% change threshold
-const SCALE_FACTOR = ethers.BigNumber.from(process.env.SCALE_FACTOR || "10000");
-const DEFAULT_GAS_LIMIT = ethers.utils.hexlify(parseInt(process.env.DEFAULT_GAS_LIMIT) || 50000);
-const FALLBACK_MAX_FEE_PER_GAS = ethers.utils.parseUnits(process.env.MAX_FEE_PER_GAS_GWEI || "10", "gwei");
-const FALLBACK_MAX_PRIORITY_FEE_PER_GAS = ethers.utils.parseUnits(process.env.MAX_PRIORITY_FEE_PER_GAS_GWEI || "2", "gwei");
+const TOKEN_NAME = process.env.TOKEN_NAME;
+const TOKEN_SYMBOL = process.env.TOKEN_SYMBOL;
+const TOKEN_DECIMALS = parseInt(process.env.TOKEN_DECIMALS, 10);
+const PRICE_CHANGE_THRESHOLD = parseFloat(process.env.PRICE_CHANGE_THRESHOLD) / 100000;
+const DEFAULT_GAS_LIMIT = ethers.utils.hexlify(parseInt(process.env.DEFAULT_GAS_LIMIT, 10));
+const INITIAL_GAS_PRICE_GWEI = ethers.utils.parseUnits(process.env.MAX_FEE_PER_GAS_GWEI, "gwei");
+const GAS_PRICE_INCREMENT_GWEI = ethers.utils.parseUnits("1", "gwei"); // Increment by 1 gwei if underpriced
 
 const provider = new ethers.providers.JsonRpcProvider(RPC_URL);
 const wallet = new ethers.Wallet(BOT_PRIVATE_KEY, provider);
@@ -27,64 +25,66 @@ const abi = [
 ];
 const contract = new ethers.Contract(CONTRACT_ADDRESS, abi, wallet);
 
-function showHeader() {
+let sessionTransactionCount = 0;
+
+async function showHeader() {
   console.clear();
   console.log("CheyneLINK Price Feed Bot\n");
-  console.log(`Monitoring ${TOKEN_NAME} (${TOKEN_SYMBOL}) and updating on-chain as needed.`);
+  console.log(`Token: ${TOKEN_NAME} (${TOKEN_SYMBOL})`);
+  console.log(`Threshold: ±${(PRICE_CHANGE_THRESHOLD * 100).toFixed(2)}%`);
   console.log("-------------------------------------------------------------");
-}
-
-async function ensureOwnership() {
-  try {
-    const currentOwner = await contract.owner();
-    if (currentOwner.toLowerCase() !== BOT_WALLET_ADDRESS.toLowerCase()) {
-      console.log("\x1b[33mTransferring ownership to bot wallet...\x1b[0m");
-      const tx = await contract.transferOwnership(BOT_WALLET_ADDRESS, {
-        gasLimit: DEFAULT_GAS_LIMIT,
-        maxFeePerGas: FALLBACK_MAX_FEE_PER_GAS,
-        maxPriorityFeePerGas: FALLBACK_MAX_PRIORITY_FEE_PER_GAS,
-      });
-      console.log("Ownership transfer transaction sent:", tx.hash);
-      await tx.wait();
-      console.log("Ownership transferred to bot wallet.");
-    } else {
-      console.log("Ownership already set to bot wallet.");
-    }
-  } catch (error) {
-    console.error("\x1b[31mOwnership check failed:\x1b[0m", error);
-  }
-}
-
-async function updatePriceOnChain(newPrice) {
-  try {
-    const gasPrice = await provider.getGasPrice();
-    const tx = await contract.updatePrice(newPrice, {
-      gasLimit: DEFAULT_GAS_LIMIT,
-      gasPrice: gasPrice,
-      type: 0, // Set transaction type to legacy for compatibility
-    });
-    console.log("\x1b[32mTransaction sent:\x1b[0m", tx.hash);
-    await tx.wait();
-    console.log("\x1b[32mPrice updated on-chain:\x1b[0m", newPrice.toString());
-  } catch (error) {
-    if (error.code === 'INSUFFICIENT_FUNDS') {
-      console.error("\x1b[31mError:\x1b[0m Insufficient funds for gas. Please add funds to the wallet.");
-    } else {
-      console.error("\x1b[31mError updating price on-chain:\x1b[0m", error);
-    }
-  }
 }
 
 async function displayBotBalance() {
   try {
     const balance = await provider.getBalance(BOT_WALLET_ADDRESS);
     const formattedBalance = ethers.utils.formatEther(balance);
-    const balanceStatus = balance.gte(ethers.utils.parseEther("0.0002"))
-      ? "\x1b[32m\u25CF\x1b[0m" // Green circle
-      : "\x1b[31m\u2716\x1b[0m"; // Red X
-    console.log(`\x1b[36mBot's wallet balance:\x1b[0m ${formattedBalance} ETH ${balanceStatus}`);
+    console.log(`Bot's wallet balance: ${formattedBalance} ETH`);
   } catch (error) {
-    console.error("\x1b[31mError fetching bot wallet balance:\x1b[0m", error);
+    console.error("Error fetching bot wallet balance:", error);
+  }
+}
+
+let isUpdating = false;
+
+async function updatePriceOnChain(newPrice, retryGasPrice = INITIAL_GAS_PRICE_GWEI) {
+  if (isUpdating) {
+    console.log("Update already in progress. Skipping this update attempt.");
+    return;
+  }
+
+  isUpdating = true;
+  try {
+    const latestNonce = await provider.getTransactionCount(wallet.address, "latest");
+
+    const txOptions = {
+      nonce: latestNonce,
+      gasLimit: DEFAULT_GAS_LIMIT,
+      gasPrice: retryGasPrice,
+    };
+
+    const tx = await contract.updatePrice(newPrice, txOptions);
+    console.log("Transaction sent:", tx.hash);
+    const receipt = await tx.wait();
+    console.log("Transaction confirmed:", receipt.transactionHash);
+
+    sessionTransactionCount++;
+  } catch (error) {
+    if (error.code === 'REPLACEMENT_UNDERPRICED') {
+      console.log("Replacement transaction underpriced. Retrying with higher gas price...");
+      const increasedGasPrice = retryGasPrice.add(GAS_PRICE_INCREMENT_GWEI);
+      await updatePriceOnChain(newPrice, increasedGasPrice);
+    } else if (error.code === 'NONCE_EXPIRED') {
+      console.log("Nonce expired. Retrying with latest nonce...");
+      await updatePriceOnChain(newPrice, retryGasPrice);
+    } else if (error.code === 'UNSUPPORTED_OPERATION') {
+      console.log("Unsupported operation for gas data. Retrying with simple gas price...");
+      await updatePriceOnChain(newPrice, ethers.utils.parseUnits("20", "gwei")); // Fallback gas price
+    } else {
+      console.error("Error updating price on-chain:", error);
+    }
+  } finally {
+    isUpdating = false; // Reset the flag after the transaction completes or fails
   }
 }
 
@@ -97,21 +97,25 @@ async function connectToWebSocket() {
 
   ws.on("message", async (data) => {
     const jsonData = JSON.parse(data);
-    const price = parseFloat(jsonData.p);
-    console.log(`\x1b[36mReal-time price update for ${TOKEN_NAME} (${TOKEN_SYMBOL}): $${price}\x1b[0m`);
-
-    const newPrice = ethers.utils.parseUnits(price.toString(), TOKEN_DECIMALS);
+    const livePrice = parseFloat(jsonData.p);
+    const newPrice = ethers.utils.parseUnits(livePrice.toFixed(2), TOKEN_DECIMALS);
 
     try {
-      const currentPriceOnChain = await contract.getPrice();
-      const priceDifference = newPrice.sub(currentPriceOnChain).abs();
-      const thresholdValue = currentPriceOnChain.mul(PRICE_CHANGE_THRESHOLD).div(SCALE_FACTOR);
+      const onChainPrice = await contract.getPrice();
+      const priceDifference = newPrice.sub(onChainPrice).abs();
+      const thresholdDollarValue = livePrice * PRICE_CHANGE_THRESHOLD /10;
 
-      if (priceDifference.gt(thresholdValue)) {
-        console.log(`\x1b[33mPrice change significant\x1b[0m (${priceDifference.toString()} > ${thresholdValue.toString()}), updating...`);
+      showHeader();
+      console.log(`Live Price Feed: $${livePrice}`);
+      console.log(`On-Chain Price: $${ethers.utils.formatUnits(onChainPrice, TOKEN_DECIMALS)}`);
+      console.log(`Threshold Dollar Value: ±$${thresholdDollarValue.toFixed(2)}`);
+      console.log(`Session Transactions: ${sessionTransactionCount}`);
+
+      if (priceDifference.gt(ethers.utils.parseUnits(thresholdDollarValue.toFixed(2), TOKEN_DECIMALS))) {
+        console.log("Price change significant, updating...");
         await updatePriceOnChain(newPrice);
       } else {
-        console.log("\x1b[33mPrice change not significant, no update needed.\x1b[0m");
+        console.log("Price change not significant, no update needed.");
       }
     } catch (error) {
       console.error("Error during price comparison or update:", error);
@@ -124,16 +128,14 @@ async function connectToWebSocket() {
 
   ws.on("close", () => {
     console.log("WebSocket connection closed. Reconnecting...");
-    setTimeout(connectToWebSocket, 1000); // Attempt to reconnect after a short delay
+    setTimeout(connectToWebSocket, 1000);
   });
 }
 
 async function main() {
   showHeader();
-  await ensureOwnership();
   await displayBotBalance();
-  connectToWebSocket(); // Start WebSocket connection for live price feed
+  connectToWebSocket();
 }
 
-// Run the script initially
 main();
